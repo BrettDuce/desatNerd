@@ -1,12 +1,12 @@
 """
-Configuration, constants, channel aliases, and UI styling for DesatNerd.
+Configuration, constants, channel aliases, and UI styling for desatNerd.
 Part of the SleepNerd suite for clinical and research sleep physiology.
 """
 
-APP_NAME = "DesatNerd"
-APP_TITLE = "DesatNerd: Oxygen Desaturations & Hypoxic Burden"
+APP_NAME = "desatNerd"
+APP_TITLE = "desatNerd: Oxygen Desaturations & Hypoxic Burden"
 APP_VERSION = "1.0.0"
-APP_ID = "MetroSouth.SleepNerd.DesatNerd.1.0.0"
+APP_ID = "BrettDuce.SleepNerd.desatNerd.1.0.0"
 
 # Target / Resampling Frequencies
 TARGET_SPO2_SF = 1.0  # Standardized 1 Hz analysis rate (literature standard)

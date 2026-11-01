@@ -8,7 +8,7 @@ env/
 .pytest_cache/
 
 # --- Build outputs (PyInstaller / Inno Setup) ---
-# Publish DesatNerd.exe and the installer through GitHub Releases instead of committing them.
+# Publish desatNerd.exe and the installer through GitHub Releases instead of committing them.
 build/
 dist/
 installer_output/

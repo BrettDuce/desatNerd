@@ -1,12 +1,12 @@
-# DesatNerd
+# desatNerd
 
 **Oxygen desaturation and hypoxic burden analysis for polysomnography and pulse oximetry.**
 
-DesatNerd is part of the SleepNerd suite. It reads overnight SpO2 recordings from PSG and standalone oximeters, removes artefact, detects desaturation events and calculates both conventional and newer hypoxic burden metrics. It runs as a desktop app (PySide6) or headless from the command line for batch processing.
+desatNerd is part of the SleepNerd suite. It reads overnight SpO2 recordings from PSG and standalone oximeters, removes artefact, detects desaturation events and calculates both conventional and newer hypoxic burden metrics. It runs as a desktop app (PySide6) or headless from the command line for batch processing.
 
 Author: Dr Brett Duce, Brisbane, Australia. Developed independently; used free of charge by the Metro South Sleep Service, Princess Alexandra Hospital, under a separate licence.
 
-> **Research use.** DesatNerd is not a registered medical device. Its outputs are intended for research and to support, not replace, review by qualified sleep scientists and physicians.
+> **Research use.** desatNerd is not a registered medical device. Its outputs are intended for research and to support, not replace, review by qualified sleep scientists and physicians.
 
 ---
 
@@ -19,7 +19,7 @@ Author: Dr Brett Duce, Brisbane, Australia. Developed independently; used free o
 | Event morphology | Duration, fall and recovery duration, depth, fall and recovery slopes (%/s), and fall and recovery limb areas for every event |
 | Analysis windows | Total sleep time (TST), sleep period time (SPT) or total recording time (TRT) |
 
-When a Compumedics Profusion XML file sits beside the EDF (`<study>.edf.XML`, `<study>_Profusion.xml` or `<study>_events.xml`), DesatNerd uses its sleep staging and scored respiratory events for the TST/SPT windows and for the event-linked burden metrics.
+When a Compumedics Profusion XML file sits beside the EDF (`<study>.edf.XML`, `<study>_Profusion.xml` or `<study>_events.xml`), desatNerd uses its sleep staging and scored respiratory events for the TST/SPT windows and for the event-linked burden metrics.
 
 ## Supported inputs
 
@@ -29,13 +29,13 @@ When a Compumedics Profusion XML file sits beside the EDF (`<study>.edf.XML`, `<
 - **Masimo**: Radical-7, Rad-97 and Rad-5 tabular and TrendCom exports
 - **Generic CSV/TSV** with an identifiable SpO2 column
 
-The full method, thresholds and references are in [`assets/DesatNerd Clinical & Technical User Guide.pdf`](assets/DesatNerd%20Clinical%20%26%20Technical%20User%20Guide.pdf).
+The full method, thresholds and references are in [`assets/desatNerd Clinical & Technical User Guide.pdf`](assets/desatNerd%20Clinical%20%26%20Technical%20User%20Guide.pdf).
 
 ## Installing
 
 ### Windows installer
 
-Download the latest `DesatNerd_Setup_vX.Y.Z.exe` from the [Releases](https://github.com/BrettDuce/desat-nerd/releases) page and run it. No Python installation is needed.
+Download the latest `desatNerd_Setup_vX.Y.Z.exe` from the [Releases](https://github.com/BrettDuce/desat-nerd/releases) page and run it. No Python installation is needed.
 
 ### From source
 
@@ -94,10 +94,10 @@ Tests run automatically on GitHub for every push (see `.github/workflows/tests.y
 
 ```bash
 pip install -r requirements-dev.txt
-pyinstaller DesatNerd.spec
+pyinstaller desatNerd.spec
 ```
 
-This produces `dist/DesatNerd.exe`. To build the installer, open `DesatNerd.iss` in [Inno Setup 6](https://jrsoftware.org/isinfo.php) and compile; the setup file is written to `installer_output/`. Build outputs are not committed to the repository. Attach the installer to a GitHub Release instead.
+This produces `dist/desatNerd.exe`. To build the installer, open `desatNerd.iss` in [Inno Setup 6](https://jrsoftware.org/isinfo.php) and compile; the setup file is written to `installer_output/`. Build outputs are not committed to the repository. Attach the installer to a GitHub Release instead.
 
 ## Project layout
 
@@ -111,8 +111,8 @@ This produces `dist/DesatNerd.exe`. To build the installer, open `DesatNerd.iss`
 | `exporter.py` | CSV export of summaries, event tables and the batch master table |
 | `config.py` | App constants, channel/column aliases, stage colours and UI styling |
 | `test_oximetry.py` | Validation test suite using synthetic recordings |
-| `DesatNerd.spec` | PyInstaller build configuration |
-| `DesatNerd.iss` | Inno Setup installer script |
+| `desatNerd.spec` | PyInstaller build configuration |
+| `desatNerd.iss` | Inno Setup installer script |
 | `assets/` | App icon and the clinical & technical user guide |
 
 ## Key references
@@ -125,4 +125,4 @@ This produces `dist/DesatNerd.exe`. To build the installer, open `DesatNerd.iss`
 
 Copyright 2026 Brett Duce.
 
-DesatNerd is proprietary software. All rights are reserved, and no use, copying, modification or distribution is permitted without a written licence from the copyright holder (see [`LICENSE`](LICENSE)). It is provided "as is", without warranty of any kind.
+desatNerd is proprietary software. All rights are reserved, and no use, copying, modification or distribution is permitted without a written licence from the copyright holder (see [`LICENSE`](LICENSE)). It is provided "as is", without warranty of any kind.

@@ -1,11 +1,11 @@
-; Script generated for DesatNerd
+; Script generated for desatNerd
 ; Inno Setup 6.x configuration script
 
-#define MyAppName "DesatNerd"
+#define MyAppName "desatNerd"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "Brett Duce"
 #define MyAppURL "https://sleepnerd.net"
-#define MyAppExeName "DesatNerd.exe"
+#define MyAppExeName "desatNerd.exe"
 #define MyAppAssocName MyAppName + " Study File"
 #define MyAppAssocExt ".edf"
 #define MyAppAssocKey StringChange(MyAppAssocName, " ", "") + MyAppAssocExt
@@ -25,7 +25,7 @@ DisableProgramGroupPage=yes
 ArchitecturesInstallIn64BitMode=x64
 ArchitecturesAllowed=x64
 OutputDir=installer_output
-OutputBaseFilename=DesatNerd_Setup_v{#MyAppVersion}
+OutputBaseFilename=desatNerd_Setup_v{#MyAppVersion}
 SetupIconFile=assets\SleepNerd.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -42,13 +42,13 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; If built using --onedir (folder distribution):
 ; Copies all binaries, dependencies, and internal DLLs
-Source: "dist\DesatNerd\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\desatNerd\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Explicitly ensure assets folder (icon and PDF User Guide) is copied
 Source: "assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; NOTE: If you built using PyInstaller --onefile instead of --onedir, replace the lines above with:
-; Source: "dist\DesatNerd.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Source: "dist\desatNerd.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Source: "assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -56,7 +56,7 @@ Source: "assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs
 Name: "{autoprograms}\{#MyAppName}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\SleepNerd.ico"
 
 ; Start Menu User Guide Shortcut
-Name: "{autoprograms}\{#MyAppName}\DesatNerd User Guide"; Filename: "{app}\assets\DesatNerd Clinical & Technical User Guide.pdf"
+Name: "{autoprograms}\{#MyAppName}\desatNerd User Guide"; Filename: "{app}\assets\desatNerd Clinical & Technical User Guide.pdf"
 
 ; Desktop Shortcut (Optional task)
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\assets\SleepNerd.ico"
@@ -65,7 +65,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Name: "{autoprograms}\{#MyAppName}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
-; Option to launch DesatNerd immediately after setup completes
+; Option to launch desatNerd immediately after setup completes
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
