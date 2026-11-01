@@ -1298,7 +1298,7 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
 
         # Fallback dialog if document is missing
         text = (
-            "<h2>DesatNerd by Dr Brett Duce, Princess Alexandra Hospital</h2>"
+            "<h2>DesatNerd by Dr Brett Duce</h2>"
             "<p><b>User Guide Document Not Found:</b><br>"
             "Please ensure <code>DesatNerd Clinical & Technical User Guide.pdf</code> is located in the "
             "<code>assets/</code> directory.</p>"
@@ -1327,6 +1327,6 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
             "desaturation morphology, and sleep apnea specific hypoxic burden.<br><br>"
             "<b>Supported Formats:</b> Compumedics EDF, Nox EDF, REMlogic EDF, Nonin (.asc/.csv/.txt), Nellcor ASCII, Masimo CSV/TXT.<br>"
             "<b>Companion Annotations:</b> Compumedics <code>.edf.XML</code>, Profusion XML, Nox XML.<br><br>"
-            "<i>Brett Duce, Princess Alexandra Hospital, Brisbane, Australia.</i>"
+            "<i>Copyright 2026 Brett Duce. All rights reserved.</i>"
         )
         QMessageBox.about(self, "About DesatNerd", text)

@@ -1,6 +1,6 @@
 """
 Configuration, constants, channel aliases, and UI styling for DesatNerd.
-Part of the Metro South SleepNerd suite for clinical and research sleep physiology.
+Part of the SleepNerd suite for clinical and research sleep physiology.
 """
 
 APP_NAME = "DesatNerd"

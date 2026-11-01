@@ -4,7 +4,7 @@
 
 DesatNerd is part of the SleepNerd suite. It reads overnight SpO2 recordings from PSG and standalone oximeters, removes artefact, detects desaturation events and calculates both conventional and newer hypoxic burden metrics. It runs as a desktop app (PySide6) or headless from the command line for batch processing.
 
-Author: Dr Brett Duce, Metro South Sleep Service, Princess Alexandra Hospital, Brisbane, Australia.
+Author: Dr Brett Duce, Brisbane, Australia. Developed independently; used free of charge by the Metro South Sleep Service, Princess Alexandra Hospital, under a separate licence.
 
 > **Research use.** DesatNerd is not a registered medical device. Its outputs are intended for research and to support, not replace, review by qualified sleep scientists and physicians.
 

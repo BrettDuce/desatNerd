@@ -1,6 +1,6 @@
 """
 Main Entry Point for DesatNerd: Oxygen Desaturations & Hypoxic Burden Analyzer
-Part of the Metro South SleepNerd suite.
+Part of the SleepNerd suite.
 Supports:
   1. Full interactive PySide6 graphical user interface with SleepNerd icons
   2. Headless command-line execution for automated batch pipelines:
