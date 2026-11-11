@@ -57,6 +57,7 @@ class AnalysisWorker(QThread):
         self.log_signal.emit(f"Starting oximetry analysis for {total_files} file(s)...")
 
         threshold = float(self.settings.get("threshold", 3.0))
+        odi_thresholds = self.settings.get("odi_thresholds", [])
         min_duration = float(self.settings.get("min_duration", 5.0))
         max_duration = float(self.settings.get("max_duration", 120.0))
         baseline_win_sec = float(self.settings.get("baseline_window_sec", 300.0))
@@ -92,8 +93,13 @@ class AnalysisWorker(QThread):
                     max_duration=max_duration,
                     baseline_win_sec=baseline_win_sec,
                     baseline_quantile=baseline_quantile,
-                    analysis_window_type=analysis_window
+                    analysis_window_type=analysis_window,
+                    odi_thresholds=odi_thresholds
                 )
+                odi_summary = ", ".join(
+                    f"{t:g}%: {result['ODI_by_threshold'][t]:.1f}" for t in result["ODI_Thresholds"]
+                )
+                self.log_signal.emit(f"ODI (events/h) -> {odi_summary}")
                 self.progress_signal.emit(70)
 
                 # 3. Export CSV files

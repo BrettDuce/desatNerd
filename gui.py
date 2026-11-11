@@ -23,7 +23,7 @@ try:
     from PySide6.QtCore import Qt, QUrl
     from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QPixmap
     from PySide6.QtWidgets import (
-        QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout,
+        QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
         QFrame, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
         QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton,
         QSizePolicy, QSlider, QSpinBox, QSplitter, QTabWidget, QTableWidget,
@@ -50,7 +50,12 @@ from config import (
     APP_NAME, APP_STYLESHEET, APP_TITLE, DEFAULT_SETTINGS,
     STAGE_COLORS, STAGE_NAMES, TIME_WINDOW_PRESETS
 )
+from oximetry_engine import (
+    MAX_THRESHOLD_PCT, MIN_THRESHOLD_PCT, parse_threshold_list
+)
 from worker import AnalysisWorker
+
+THRESHOLD_PRESETS = (2.0, 3.0, 4.0, 5.0)
 
 
 def resource_path(relative_path: str) -> str:
@@ -118,12 +123,16 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
         file_menu.addAction(act_exit)
 
         settings_menu = menubar.addMenu("Analysis Settings")
-        self.act_thresh_3 = QAction("3% Desaturation Threshold", self, checkable=True, checked=True)
-        self.act_thresh_4 = QAction("4% Desaturation Threshold", self, checkable=True)
-        self.act_thresh_3.triggered.connect(lambda: self.set_threshold(3.0))
-        self.act_thresh_4.triggered.connect(lambda: self.set_threshold(4.0))
-        settings_menu.addAction(self.act_thresh_3)
-        settings_menu.addAction(self.act_thresh_4)
+        self.thresh_actions = {}
+        for preset in THRESHOLD_PRESETS:
+            act = QAction(f"{preset:g}% Desaturation Threshold", self, checkable=True,
+                          checked=(preset == DEFAULT_SETTINGS["threshold"]))
+            act.triggered.connect(lambda _checked=False, v=preset: self.set_threshold(v))
+            settings_menu.addAction(act)
+            self.thresh_actions[preset] = act
+        act_custom = QAction("Custom Threshold... (set in Analysis Parameters)", self)
+        act_custom.triggered.connect(lambda: (self.spin_thresh.setFocus(), self.spin_thresh.selectAll()))
+        settings_menu.addAction(act_custom)
         settings_menu.addSeparator()
 
         self.act_win_spt = QAction("Window: Sleep Period Time (SPT: Onset to Offset)", self, checkable=True, checked=True)
@@ -154,14 +163,11 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
         help_menu.addAction(act_about)
 
     def set_threshold(self, val: float):
-        if val == 3.0:
-            self.act_thresh_3.setChecked(True)
-            self.act_thresh_4.setChecked(False)
-            self.combo_thresh.setCurrentText("3% SpO2 Drop")
-        else:
-            self.act_thresh_3.setChecked(False)
-            self.act_thresh_4.setChecked(True)
-            self.combo_thresh.setCurrentText("4% SpO2 Drop")
+        val = round(float(val), 1)
+        for preset, act in self.thresh_actions.items():
+            act.setChecked(abs(preset - val) < 1e-6)
+        if abs(self.spin_thresh.value() - val) > 1e-6:
+            self.spin_thresh.setValue(val)
 
     def set_window(self, win: str):
         self.act_win_spt.setChecked(win == "SPT")
@@ -264,11 +270,26 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
         params_lay.setContentsMargins(10, 16, 10, 8)
         params_lay.setSpacing(5)
 
-        params_lay.addWidget(QLabel("Desaturation Threshold:"))
-        self.combo_thresh = QComboBox()
-        self.combo_thresh.addItems(["3% SpO2 Drop", "4% SpO2 Drop"])
-        self.combo_thresh.currentTextChanged.connect(self.on_thresh_combo_changed)
-        params_lay.addWidget(self.combo_thresh)
+        params_lay.addWidget(QLabel("Desaturation Threshold (SpO2 drop):"))
+        self.spin_thresh = QDoubleSpinBox()
+        self.spin_thresh.setRange(MIN_THRESHOLD_PCT, MAX_THRESHOLD_PCT)
+        self.spin_thresh.setDecimals(1)
+        self.spin_thresh.setSingleStep(0.5)
+        self.spin_thresh.setSuffix(" %")
+        self.spin_thresh.setValue(DEFAULT_SETTINGS["threshold"])
+        self.spin_thresh.setToolTip(
+            "Drop from pre-event baseline used for the main event list, morphology and Kulkas metrics.\n"
+            "Any value from 0.5 to 50% (e.g. 2, 3, 4, 5). Values below 3% are close to oximeter\n"
+            "resolution and are more sensitive to noise."
+        )
+        self.spin_thresh.valueChanged.connect(self.set_threshold)
+        params_lay.addWidget(self.spin_thresh)
+
+        params_lay.addWidget(QLabel("Also report ODI at (%):"))
+        self.edit_odi_extra = QLineEdit()
+        self.edit_odi_extra.setPlaceholderText("e.g. 2, 5  (3% and 4% always reported)")
+        self.edit_odi_extra.setToolTip("Comma-separated extra thresholds. Each adds an ODI_<x>pct column to the CSV outputs.")
+        params_lay.addWidget(self.edit_odi_extra)
 
         params_lay.addWidget(QLabel("Baseline Window:"))
         self.combo_baseline = QComboBox()
@@ -361,8 +382,8 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
         self.box_min, self.val_min = self.create_stat_box("Min SpO2 (%)", "--", is_red=True)
         self.box_base, self.val_base = self.create_stat_box("Baseline SpO2 (%)", "--")
 
-        self.box_odi3, self.val_odi3 = self.create_stat_box("ODI (3% Drop)", "--", is_red=True)
-        self.box_odi4, self.val_odi4 = self.create_stat_box("ODI (4% Drop)", "--", is_red=True)
+        self.box_odi3, self.val_odi3 = self.create_stat_box("ODI (Selected Drop)", "--", is_red=True)
+        self.box_odi4, self.val_odi4 = self.create_stat_box("ODI 3% / 4%", "--", is_red=True)
         self.box_t90_pct, self.val_t90_pct = self.create_stat_box("T90 (% Time <90%)", "--", is_red=True)
         self.box_t90_min, self.val_t90_min = self.create_stat_box("T90 (Minutes <90%)", "--")
 
@@ -516,7 +537,7 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
         lay_batch = QVBoxLayout(self.tab_batch)
         self.table_batch_queue = QTableWidget(0, 8)
         self.table_batch_queue.setHorizontalHeaderLabels([
-            "Filename", "Device Flavor", "Duration", "ODI (3%)", "T90 (%)", "Azarbarzin HB", "Kulkas DesSev", "Status"
+            "Filename", "Device Flavor", "Duration", "ODI (Selected)", "T90 (%)", "Azarbarzin HB", "Kulkas DesSev", "Status"
         ])
         self.table_batch_queue.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         for c in range(1, 8):
@@ -587,10 +608,6 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
             self.lbl_batch_progress.setVisible(False)
             self.pbar_batch.setVisible(False)
             self.tab_widget.setCurrentWidget(self.tab_viewer)
-
-    def on_thresh_combo_changed(self, text: str):
-        val = 4.0 if "4%" in text else 3.0
-        self.set_threshold(val)
 
     def on_win_combo_changed(self, text: str):
         if "SPT" in text:
@@ -678,7 +695,12 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
         else:
             file_list = [target]
 
-        threshold = 4.0 if "4%" in self.combo_thresh.currentText() else 3.0
+        threshold = round(float(self.spin_thresh.value()), 1)
+        try:
+            odi_thresholds = parse_threshold_list(self.edit_odi_extra.text())
+        except ValueError as e:
+            QMessageBox.warning(self, "Threshold Error", f"{e}\n\nEnter extra thresholds as numbers, e.g. 2, 5")
+            return
         baseline_sec = 300.0
         if "180" in self.combo_baseline.currentText():
             baseline_sec = 180.0
@@ -696,6 +718,7 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
 
         settings = {
             "threshold": threshold,
+            "odi_thresholds": odi_thresholds,
             "min_duration": DEFAULT_SETTINGS["min_duration"],
             "max_duration": DEFAULT_SETTINGS["max_duration"],
             "baseline_window_sec": baseline_sec,
@@ -789,11 +812,18 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
         base_s = res.get("Baseline_SpO2", 0.0)
         self.val_base.setText(f"{base_s:.1f}%")
 
-        odi3 = res.get("ODI_3pct", 0.0)
-        self.val_odi3.setText(f"{odi3:.1f}")
+        sel_thr = res.get("Desaturation_Threshold", 3.0)
+        title_sel = self.box_odi3.findChild(QLabel)
+        if title_sel is not None:
+            title_sel.setText(f"ODI ({sel_thr:g}% Drop, Selected)")
+        self.val_odi3.setText(f"{res.get('ODI_Selected', 0.0):.1f}")
 
+        odi3 = res.get("ODI_3pct", 0.0)
         odi4 = res.get("ODI_4pct", 0.0)
-        self.val_odi4.setText(f"{odi4:.1f}")
+        self.val_odi4.setText(f"{odi3:.1f} / {odi4:.1f}")
+        all_odi = res.get("ODI_by_threshold", {})
+        if all_odi:
+            self.box_odi4.setToolTip("\n".join(f"ODI {t:g}%: {v:.1f} /h" for t, v in sorted(all_odi.items())))
 
         t90_p = res.get("T90_Percent", 0.0)
         self.val_t90_pct.setText(f"{t90_p:.1f}%")
@@ -1173,7 +1203,7 @@ class MainWindow(QMainWindow if PYSIDE6_AVAILABLE else object):
             item_f = self.table_batch_queue.item(r, 0)
             if item_f and item_f.text() == fname:
                 dur = res.get("Analysis_Duration_Hours", 0.0)
-                odi = res.get("ODI_3pct", 0.0)
+                odi = res.get("ODI_Selected", 0.0)
                 t90 = res.get("T90_Percent", 0.0)
                 hb = res.get("Azarbarzin_HB_pctmin_hr", 0.0)
                 ks = res.get("Kulkas_Total_Severity_pctmin_hr", 0.0)

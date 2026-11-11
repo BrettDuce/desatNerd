@@ -3,21 +3,68 @@ Oximetry Signal Processing & Hypoxic Burden Calculation Engine for desatNerd
 Supports:
   - Multi-condition physiological artifact detection (SpO2 slew rates, pulse coupling, flatlines, dropouts)
   - Sleep-masked analysis (TST/SPT) when Compumedics XML annotations are available
-  - High-precision oxygen desaturation detection (3% and 4% thresholds)
+  - High-precision oxygen desaturation detection at any user-selected drop threshold
+    (e.g. 2%, 3%, 4%, 5%), with ODI reported at any number of thresholds in one pass
   - Detailed desaturation morphology (durations, depths, slopes, areas)
-  - Conventional hypoxemia metrics (T90 %, T90 min, T88, T85, T80, ODI 3%, ODI 4%)
+  - Conventional hypoxemia metrics (T90 %, T90 min, T88, T85, T80, ODI at each threshold)
   - Literature hypoxic burden algorithms:
       1. Azarbarzin method (Hypoxic Burden, %min/h)
       2. REDTA method (de Chazal et al.: Respiratory Event Desaturation Transient Area, %h & %min/h)
       3. Kulkas method (Desaturation Severity DesSev, Recovery Severity RecSev, & Slope Dynamics)
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+import re
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
 
 from parsers import OximetryRecording
+
+# ---------------------------------------------------------------------------
+# Desaturation threshold helpers
+# ---------------------------------------------------------------------------
+MIN_THRESHOLD_PCT = 0.5
+MAX_THRESHOLD_PCT = 50.0
+DEFAULT_ODI_THRESHOLDS = (3.0, 4.0)
+
+
+def validate_threshold(value: Any) -> float:
+    """Return a desaturation drop threshold as float, or raise ValueError."""
+    try:
+        thr = float(str(value).strip().rstrip("%").strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"Desaturation threshold '{value}' is not a number.")
+    if not np.isfinite(thr) or thr < MIN_THRESHOLD_PCT or thr > MAX_THRESHOLD_PCT:
+        raise ValueError(
+            f"Desaturation threshold {thr:g}% is outside the allowed range "
+            f"({MIN_THRESHOLD_PCT:g}-{MAX_THRESHOLD_PCT:g}%)."
+        )
+    return round(thr, 2)
+
+
+def parse_threshold_list(value: Any) -> List[float]:
+    """Parse thresholds from '2, 3, 4.5', '2;3', '2 3 5%', or a list/tuple of numbers.
+
+    Duplicates are removed and the result is sorted. Raises ValueError on any bad entry.
+    """
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set, np.ndarray)):
+        items = list(value)
+    else:
+        items = [x for x in re.split(r"[,;\s]+", str(value)) if x.strip()]
+    return sorted({validate_threshold(x) for x in items})
+
+
+def threshold_label(thr: float) -> str:
+    """Column-safe label: 3.0 -> '3', 2.5 -> '2p5'."""
+    return f"{float(thr):g}".replace(".", "p")
+
+
+def odi_key(thr: float) -> str:
+    """Result/CSV key for an ODI at a given threshold, e.g. 'ODI_3pct', 'ODI_2p5pct'."""
+    return f"ODI_{threshold_label(thr)}pct"
 
 
 class OximetryEngine:
@@ -200,6 +247,7 @@ class OximetryEngine:
         sleep_mask: Optional[np.ndarray] = None,
         spt_mask: Optional[np.ndarray] = None
     ) -> Tuple[List[Dict[str, Any]], np.ndarray]:
+        threshold = validate_threshold(threshold)
         sig = np.asarray(signal, dtype=np.float64).flatten()
         n = len(sig)
         if n == 0:
@@ -233,7 +281,10 @@ class OximetryEngine:
         baselines = np.maximum(q_baseline, short_max - 0.5)
 
         # 2. Trigger envelope
-        drops = (baselines - sig) >= 1.5
+        # 1.5% for thresholds >= 2% (original behaviour); scaled down for smaller
+        # thresholds so sub-2% events can still open a candidate window.
+        trigger_pct = min(1.5, 0.75 * threshold)
+        drops = (baselines - sig) >= trigger_pct
         drops[art_mask | np.isnan(sig)] = False
         
         diff = np.diff(np.concatenate(([0], drops.astype(int), [0])))
@@ -308,9 +359,10 @@ class OximetryEngine:
                     break
 
                 # Condition B: Turnaround into the next event or plateau below baseline
-                # If it has made a meaningful recovery (>= 50% of depth or >= 2.5%),
+                # If it has made a meaningful recovery (>= 50% of depth or >= 2%,
+                # or >= the threshold when the threshold is below 2%),
                 # and has rolled over by >= 1.0% from the peak of this recovery:
-                if current_rebound >= max(2.0, 0.50 * current_depth):
+                if current_rebound >= max(min(2.0, threshold), 0.50 * current_depth):
                     if (best_recovery_val - val) >= 1.0:
                         # recovery_idx remains locked at the sample of best_recovery_val
                         break
@@ -590,8 +642,19 @@ class OximetryEngine:
         max_duration: float = 120.0,
         baseline_win_sec: float = 300.0,
         baseline_quantile: float = 0.98,
-        analysis_window_type: str = "SPT"
+        analysis_window_type: str = "SPT",
+        odi_thresholds: Optional[Sequence[float]] = None
     ) -> Dict[str, Any]:
+        """Analyse one recording.
+
+        threshold:       the drop (%) used for the main event list, morphology and Kulkas metrics.
+        odi_thresholds:  extra thresholds (%) to report an ODI for, e.g. [2, 5]. ODI 3% and 4%
+                         and the selected threshold are always reported as well.
+        """
+        threshold = validate_threshold(threshold)
+        report_thresholds = sorted(
+            set(DEFAULT_ODI_THRESHOLDS) | {threshold} | set(parse_threshold_list(odi_thresholds))
+        )
         sr = recording.fs
         raw_sig = recording.spo2_raw
         n_samples = len(raw_sig)
@@ -643,38 +706,47 @@ class OximetryEngine:
             spt_mask=spt_mask
         )
 
-        desat_events_3pct, _ = OximetryEngine.detect_desaturations(
-            clean_sig, sr, art_mask,
-            threshold=3.0, min_duration=min_duration, max_duration=max_duration,
-            baseline_win_sec=baseline_win_sec, baseline_quantile=baseline_quantile,
-            sleep_mask=sleep_mask,
-            spt_mask=spt_mask
-        )
-        desat_events_4pct, _ = OximetryEngine.detect_desaturations(
-            clean_sig, sr, art_mask,
-            threshold=4.0, min_duration=min_duration, max_duration=max_duration,
-            baseline_win_sec=baseline_win_sec, baseline_quantile=baseline_quantile,
-            sleep_mask=sleep_mask,
-            spt_mask=spt_mask
-        )
+        # Events at every reported threshold (reuse the main run where it matches)
+        events_by_threshold: Dict[float, List[Dict[str, Any]]] = {}
+        for thr in report_thresholds:
+            if thr == threshold:
+                events_by_threshold[thr] = desat_events_main
+                continue
+            events_by_threshold[thr], _ = OximetryEngine.detect_desaturations(
+                clean_sig, sr, art_mask,
+                threshold=thr, min_duration=min_duration, max_duration=max_duration,
+                baseline_win_sec=baseline_win_sec, baseline_quantile=baseline_quantile,
+                sleep_mask=sleep_mask,
+                spt_mask=spt_mask
+            )
 
         # Filter events according to chosen window
         if analysis_window_type == "SPT" and has_sleep_stages:
-            desat_events_main = [e for e in desat_events_main if e.get("Is_In_SPT", True)]
-            desat_events_3pct = [e for e in desat_events_3pct if e.get("Is_In_SPT", True)]
-            desat_events_4pct = [e for e in desat_events_4pct if e.get("Is_In_SPT", True)]
+            window_flag = "Is_In_SPT"
             resp_events = [e for e in recording.respiratory_events if spt_start_sec <= (e.get("Start", 0.0) + e.get("Duration", 0.0)/2.0) <= spt_end_sec]
         elif analysis_window_type == "TST" and has_sleep_stages:
-            desat_events_main = [e for e in desat_events_main if e.get("Is_In_TST", True)]
-            desat_events_3pct = [e for e in desat_events_3pct if e.get("Is_In_TST", True)]
-            desat_events_4pct = [e for e in desat_events_4pct if e.get("Is_In_TST", True)]
+            window_flag = "Is_In_TST"
             resp_events = [e for e in recording.respiratory_events if sleep_mask[min(n_samples - 1, int(round((e.get("Start", 0.0) + e.get("Duration", 0.0)/2.0) * sr)))]]
         else:
+            window_flag = None
             resp_events = recording.respiratory_events
 
+        if window_flag is not None:
+            events_by_threshold = {
+                thr: [e for e in evs if e.get(window_flag, True)]
+                for thr, evs in events_by_threshold.items()
+            }
+        desat_events_main = events_by_threshold[threshold]
+        desat_events_3pct = events_by_threshold[3.0]
+        desat_events_4pct = events_by_threshold[4.0]
+
         # 5. Conventional Indices
-        odi_3 = len(desat_events_3pct) / analysis_hours if analysis_hours > 0 else 0.0
-        odi_4 = len(desat_events_4pct) / analysis_hours if analysis_hours > 0 else 0.0
+        odi_by_threshold = {
+            thr: (len(evs) / analysis_hours if analysis_hours > 0 else 0.0)
+            for thr, evs in events_by_threshold.items()
+        }
+        odi_3 = odi_by_threshold[3.0]
+        odi_4 = odi_by_threshold[4.0]
 
         valid_filter = ~art_mask & ~np.isnan(clean_sig)
         if window_mask is not None:
@@ -712,7 +784,7 @@ class OximetryEngine:
             desat_events_main, analysis_hours
         )
 
-        return {
+        result = {
             "File_Name": recording.file_name,
             "File_Path": recording.file_path,
             "Device_Type": recording.device_type,
@@ -738,6 +810,8 @@ class OximetryEngine:
             "ODI_Selected": len(desat_events_main) / analysis_hours if analysis_hours > 0 else 0.0,
             "ODI_3pct": odi_3,
             "ODI_4pct": odi_4,
+            "ODI_Thresholds": list(report_thresholds),
+            "ODI_by_threshold": odi_by_threshold,
 
             # Morphology
             "Mean_Desat_Duration_sec": mean_dur,
@@ -784,5 +858,10 @@ class OximetryEngine:
             "sleep_epochs": recording.sleep_epochs,
             "desaturation_events": desat_events_main,
             "desat_events_3pct": desat_events_3pct,
-            "desat_events_4pct": desat_events_4pct
+            "desat_events_4pct": desat_events_4pct,
+            "desat_events_by_threshold": events_by_threshold
         }
+        # Flat per-threshold keys for CSV export, e.g. ODI_2pct, ODI_2p5pct, ODI_5pct
+        for thr, odi in odi_by_threshold.items():
+            result[odi_key(thr)] = odi
+        return result

@@ -56,7 +56,9 @@ CSV_COLUMN_ALIASES = {
 
 # Analysis Default Settings
 DEFAULT_SETTINGS = {
-    'threshold': 3.0,               # Desaturation drop threshold (3.0% or 4.0%)
+    'threshold': 3.0,               # Desaturation drop threshold (%) - any value 0.5-50, e.g. 2, 3, 4, 5
+    'odi_thresholds': [],           # Extra thresholds (%) to also report ODI for, e.g. [2.0, 5.0]
+                                    # (ODI 3%, ODI 4% and the selected threshold are always reported)
     'min_duration': 5.0,            # Minimum desaturation duration (seconds)
     'max_duration': 120.0,          # Maximum desaturation duration (seconds)
     'baseline_window_sec': 300.0,   # Rolling baseline quantile window (seconds)

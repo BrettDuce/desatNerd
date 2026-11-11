@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from parsers import load_oximetry_file, parse_edf_oximetry, parse_text_oximetry, OximetryRecording
-from oximetry_engine import OximetryEngine
+from oximetry_engine import OximetryEngine, odi_key, parse_threshold_list, validate_threshold
 from exporter import OximetryExporter
 
 
@@ -263,6 +263,104 @@ class TestDesatNerd(unittest.TestCase):
         self.assertEqual(len(df_batch), 2)
         self.assertEqual(df_batch.iloc[0]["File_Name"], "test_compumedics.edf")
         self.assertEqual(df_batch.iloc[1]["File_Name"], "test_nonin.csv")
+
+
+def make_graded_depth_recording(depths=(2.5, 3.5, 4.5, 6.0), repeats=3, fs=1.0) -> OximetryRecording:
+    """Synthetic 1 Hz recording with desaturations of known depths (baseline 96%).
+
+    Each depth appears `repeats` times, events every 120 s: 20 s fall, 25 s recovery.
+    """
+    n_events = len(depths) * repeats
+    duration = 300 + n_events * 120
+    t = np.arange(int(duration * fs)) / fs
+    spo2 = np.full(len(t), 96.0)
+    pulse = 65.0 + 2.0 * np.sin(2 * np.pi * t / 7.0)
+    for k in range(n_events):
+        depth = depths[k % len(depths)]
+        start = int((300 + k * 120) * fs)
+        fall, rec = int(20 * fs), int(25 * fs)
+        spo2[start:start + fall] = np.linspace(96.0, 96.0 - depth, fall)
+        spo2[start + fall:start + fall + rec] = np.linspace(96.0 - depth, 96.0, rec)
+    return OximetryRecording(
+        file_path="graded.csv", file_name="graded.csv", device_type="Synthetic",
+        duration_sec=duration, fs=fs, time_axis=t, spo2_raw=spo2, pulse_raw=pulse,
+    )
+
+
+class TestConfigurableThresholds(unittest.TestCase):
+    def setUp(self):
+        self.output_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.output_dir, ignore_errors=True)
+
+    def test_threshold_parsing(self):
+        self.assertEqual(parse_threshold_list("2, 5;4.5 3%"), [2.0, 3.0, 4.5, 5.0])
+        self.assertEqual(parse_threshold_list([5, "2", 2.0]), [2.0, 5.0])
+        self.assertEqual(parse_threshold_list(""), [])
+        self.assertEqual(validate_threshold("2.5%"), 2.5)
+        for bad in ["abc", "0", "-1", "60"]:
+            with self.assertRaises(ValueError):
+                validate_threshold(bad)
+        self.assertEqual(odi_key(3.0), "ODI_3pct")
+        self.assertEqual(odi_key(2.5), "ODI_2p5pct")
+
+    def test_event_counts_scale_with_threshold(self):
+        rec = make_graded_depth_recording()  # 3 events each at 2.5, 3.5, 4.5, 6.0 %
+        expected = {2.0: 12, 3.0: 9, 4.0: 6, 5.0: 3}
+        for thr, count in expected.items():
+            res = OximetryEngine.analyze_recording(rec, threshold=thr, analysis_window_type="TRT")
+            self.assertEqual(res["Desaturation_Count"], count, f"threshold {thr}%")
+            self.assertEqual(res["Desaturation_Threshold"], thr)
+
+    def test_multiple_odi_thresholds_in_one_pass(self):
+        rec = make_graded_depth_recording()
+        res = OximetryEngine.analyze_recording(
+            rec, threshold=2.0, odi_thresholds=[5, 2.5], analysis_window_type="TRT"
+        )
+        self.assertEqual(res["ODI_Thresholds"], [2.0, 2.5, 3.0, 4.0, 5.0])
+        hours = res["Analysis_Duration_Hours"]
+        counts = {2.0: 12, 2.5: 12, 3.0: 9, 4.0: 6, 5.0: 3}
+        for thr, n in counts.items():
+            self.assertAlmostEqual(res[odi_key(thr)], n / hours, places=6)
+            self.assertAlmostEqual(res["ODI_by_threshold"][thr], n / hours, places=6)
+        self.assertAlmostEqual(res["ODI_Selected"], res["ODI_2pct"], places=9)
+        # Monotonic: a smaller threshold never gives fewer events
+        odis = [res["ODI_by_threshold"][t] for t in res["ODI_Thresholds"]]
+        self.assertEqual(odis, sorted(odis, reverse=True))
+
+    def test_default_3_and_4_unchanged(self):
+        rec = make_graded_depth_recording()
+        a = OximetryEngine.analyze_recording(rec, threshold=3.0, analysis_window_type="TRT")
+        b = OximetryEngine.analyze_recording(rec, threshold=3.0, odi_thresholds=[2, 5], analysis_window_type="TRT")
+        for k in ("ODI_3pct", "ODI_4pct", "Desaturation_Count", "Azarbarzin_HB_pctmin_hr", "Kulkas_Total_Severity_pctmin_hr"):
+            self.assertAlmostEqual(a[k], b[k], places=9)
+
+    def test_csv_has_extra_odi_columns(self):
+        rec = make_graded_depth_recording()
+        res = OximetryEngine.analyze_recording(rec, threshold=2.0, odi_thresholds=[5], analysis_window_type="TRT")
+        df = pd.read_csv(OximetryExporter.export_single_summary(res, self.output_dir))
+        cols = list(df.columns)
+        i = cols.index("ODI_Selected")
+        self.assertEqual(cols[i + 1:i + 5], ["ODI_2pct", "ODI_3pct", "ODI_4pct", "ODI_5pct"])
+
+    def test_batch_append_with_changing_threshold_sets(self):
+        rec = make_graded_depth_recording()
+        r1 = OximetryEngine.analyze_recording(rec, threshold=3.0, analysis_window_type="TRT")
+        r2 = OximetryEngine.analyze_recording(rec, threshold=3.0, odi_thresholds=[2, 5], analysis_window_type="TRT")
+        r3 = OximetryEngine.analyze_recording(rec, threshold=4.0, analysis_window_type="TRT")
+        path = OximetryExporter.append_to_batch_summary(r1, self.output_dir)
+        OximetryExporter.append_to_batch_summary(r2, self.output_dir)
+        OximetryExporter.append_to_batch_summary(r3, self.output_dir)
+        df = pd.read_csv(path)
+        self.assertEqual(len(df), 3)
+        cols = list(df.columns)
+        self.assertEqual(cols[cols.index("ODI_Selected") + 1:cols.index("ODI_Selected") + 5],
+                         ["ODI_2pct", "ODI_3pct", "ODI_4pct", "ODI_5pct"])
+        self.assertTrue(pd.isna(df.loc[0, "ODI_2pct"]))
+        self.assertAlmostEqual(df.loc[1, "ODI_5pct"], r2["ODI_5pct"], places=4)
+        self.assertTrue(pd.isna(df.loc[2, "ODI_5pct"]))
+        self.assertAlmostEqual(df.loc[0, "ODI_3pct"], r1["ODI_3pct"], places=4)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ Author: Dr Brett Duce, Brisbane, Australia. Developed independently; used free o
 
 | Group | Metrics |
 |---|---|
-| Conventional | ODI 3%, ODI 4%, T90 / T88 / T85 / T80 (minutes and % of valid time), baseline, mean and minimum SpO2 |
+| Conventional | ODI at any desaturation threshold (ODI 3% and 4% always, plus any others you choose, e.g. 2% or 5%), T90 / T88 / T85 / T80 (minutes and % of valid time), baseline, mean and minimum SpO2 |
 | Hypoxic burden | Azarbarzin hypoxic burden (%min/h), REDTA (%h and %min/h), Kulkas desaturation, recovery and total severity (%min/h) |
 | Event morphology | Duration, fall and recovery duration, depth, fall and recovery slopes (%/s), and fall and recovery limb areas for every event |
 | Analysis windows | Total sleep time (TST), sleep period time (SPT) or total recording time (TRT) |
@@ -57,12 +57,12 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Pick a single recording or a batch folder, choose a 3% or 4% threshold and an output folder, then select **Start Analysis**. You can step through the SpO2 trace, click events in the morphology table to jump to them, and review the summary; results are saved as CSV files in the output folder.
+Pick a single recording or a batch folder, choose a desaturation threshold (any value from 0.5% to 50%; presets for 2, 3, 4 and 5% are in the Analysis Settings menu), optionally list extra thresholds to report ODI for (e.g. `2, 5`), and an output folder, then select **Start Analysis**. You can step through the SpO2 trace, click events in the morphology table to jump to them, and review the summary; results are saved as CSV files in the output folder.
 
 ### Command line (batch)
 
 ```bash
-python main.py --cli --input <file_or_folder> --output <results_folder> [--threshold 3.0]
+python main.py --cli --input <file_or_folder> --output <results_folder> [--threshold 3.0] [--odi-thresholds 2,5]
 ```
 
 | Option | Description |
@@ -70,7 +70,8 @@ python main.py --cli --input <file_or_folder> --output <results_folder> [--thres
 | `--cli` | Run without the GUI |
 | `-i`, `--input` | A single recording, or a folder of recordings |
 | `-o`, `--output` | Folder for results (default: `./oximetry_results`) |
-| `-t`, `--threshold` | Desaturation threshold in % (default 3.0) |
+| `-t`, `--threshold` | Desaturation threshold in % for the main event list, any value 0.5–50 (default 3.0) |
+| `--odi-thresholds` | Extra thresholds to report ODI for, e.g. `2,5`; each adds an `ODI_<x>pct` column (2.5% → `ODI_2p5pct`). ODI 3% and 4% are always reported |
 
 For each study the CLI writes:
 

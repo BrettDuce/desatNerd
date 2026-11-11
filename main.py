@@ -4,7 +4,7 @@ Part of the SleepNerd suite.
 Supports:
   1. Full interactive PySide6 graphical user interface with SleepNerd icons
   2. Headless command-line execution for automated batch pipelines:
-     python main.py --cli --input <file_or_dir> --output <dir> [--threshold 3.0]
+     python main.py --cli --input <file_or_dir> --output <dir> [--threshold 3.0] [--odi-thresholds 2,5]
 """
 
 import argparse
@@ -81,7 +81,13 @@ def run_cli(args):
 
     input_path = args.input
     output_dir = args.output or os.path.join(os.getcwd(), "oximetry_results")
-    threshold = float(args.threshold)
+    from oximetry_engine import parse_threshold_list, validate_threshold
+    try:
+        threshold = validate_threshold(args.threshold)
+        odi_thresholds = parse_threshold_list(args.odi_thresholds)
+    except ValueError as e:
+        print(f"[Error] {e}")
+        sys.exit(1)
     os.makedirs(output_dir, exist_ok=True)
 
     if os.path.isdir(input_path):
@@ -96,11 +102,12 @@ def run_cli(args):
         print(f"[{idx + 1}/{len(file_list)}] Analyzing: {fname}...")
         try:
             recording = load_oximetry_file(fpath)
-            res = OximetryEngine.analyze_recording(recording, threshold=threshold)
+            res = OximetryEngine.analyze_recording(recording, threshold=threshold, odi_thresholds=odi_thresholds)
             sum_csv = OximetryExporter.export_single_summary(res, output_dir)
             ev_csv = OximetryExporter.export_events_csv(res, output_dir)
             master_csv = OximetryExporter.append_to_batch_summary(res, output_dir)
-            print(f"  -> ODI 3%: {res['ODI_3pct']:.1f}, ODI 4%: {res['ODI_4pct']:.1f}, T90: {res['T90_Percent']:.1f}%, Azarbarzin HB: {res['Azarbarzin_HB_pctmin_hr']:.2f}")
+            odi_txt = ", ".join(f"ODI {t:g}%: {res['ODI_by_threshold'][t]:.1f}" for t in res["ODI_Thresholds"])
+            print(f"  -> {odi_txt}, T90: {res['T90_Percent']:.1f}%, Azarbarzin HB: {res['Azarbarzin_HB_pctmin_hr']:.2f}")
             print(f"  -> Saved summary: {os.path.basename(sum_csv)}, events: {os.path.basename(ev_csv)}")
         except Exception as e:
             print(f"  -> [ERROR] Failed {fname}: {e}")
@@ -147,7 +154,10 @@ if __name__ == "__main__":
     parser.add_argument("--cli", action="store_true", help="Run in headless command-line mode without GUI")
     parser.add_argument("--input", "-i", type=str, help="Path to single file or folder containing oximetry recordings")
     parser.add_argument("--output", "-o", type=str, default="", help="Directory to save CSV outputs")
-    parser.add_argument("--threshold", "-t", type=float, default=3.0, help="Desaturation drop threshold in percent (default: 3.0)")
+    parser.add_argument("--threshold", "-t", type=str, default="3.0",
+                        help="Desaturation drop threshold in percent for the main event list, any value 0.5-50 (default: 3)")
+    parser.add_argument("--odi-thresholds", type=str, default="",
+                        help="Extra thresholds to report ODI for, e.g. \"2,5\" (ODI 3%% and 4%% are always reported)")
 
     args = parser.parse_args()
 

@@ -8,6 +8,7 @@ Handles:
 
 import csv
 import os
+import re
 from typing import Any, Dict, List
 import pandas as pd
 
@@ -87,12 +88,34 @@ EVENT_FIELDNAMES = [
 ]
 
 
+def _order_odi_columns(cols: List[str]) -> List[str]:
+    """Keep all ODI_<x>pct columns together, sorted by threshold, directly after ODI_Selected."""
+    pat = re.compile(r"^ODI_(\d+(?:p\d+)?)pct$")
+    odi_cols = [c for c in cols if pat.match(c)]
+    if not odi_cols:
+        return cols
+    odi_cols.sort(key=lambda c: float(pat.match(c).group(1).replace("p", ".")))
+    rest = [c for c in cols if c not in odi_cols]
+    pos = rest.index("ODI_Selected") + 1 if "ODI_Selected" in rest else len(rest)
+    return rest[:pos] + odi_cols + rest[pos:]
+
+
+def summary_fieldnames(result: Dict[str, Any]) -> List[str]:
+    """Static summary columns plus one ODI column per extra threshold (e.g. ODI_2pct, ODI_5pct).
+    All ODI columns are ordered by threshold after ODI_Selected."""
+    from oximetry_engine import odi_key
+
+    fields = list(SUMMARY_FIELDNAMES)
+    fields += [odi_key(t) for t in result.get("ODI_Thresholds", []) if odi_key(t) not in fields]
+    return _order_odi_columns(fields)
+
+
 class OximetryExporter:
     @staticmethod
     def _build_summary_row(result: Dict[str, Any]) -> Dict[str, Any]:
         sleep_sum = result.get("Sleep_Summary", {})
         row = {}
-        for k in SUMMARY_FIELDNAMES:
+        for k in summary_fieldnames(result):
             if k in result:
                 row[k] = result[k]
             elif k in sleep_sum:
@@ -151,9 +174,25 @@ class OximetryExporter:
         file_exists = os.path.exists(csv_path)
 
         row = OximetryExporter._build_summary_row(result)
+        fields = list(row.keys())
+
+        if file_exists:
+            with open(csv_path, newline='', encoding='utf-8') as f:
+                existing_header = next(csv.reader(f), [])
+            if existing_header and set(fields) - set(existing_header):
+                # New ODI threshold columns (or an older file): rebuild with the union of
+                # columns so earlier rows keep their values and new columns are blank for them.
+                df_old = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
+                merged = list(existing_header) + [c for c in fields if c not in existing_header]
+                merged = _order_odi_columns(merged)
+                df_new = pd.concat([df_old, pd.DataFrame([row])], ignore_index=True)
+                df_new.reindex(columns=merged).to_csv(csv_path, index=False)
+                return csv_path
+            if existing_header:
+                fields = existing_header
 
         with open(csv_path, mode='a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=SUMMARY_FIELDNAMES)
+            writer = csv.DictWriter(f, fieldnames=fields, extrasaction='ignore', restval='')
             if not file_exists:
                 writer.writeheader()
             writer.writerow(row)
